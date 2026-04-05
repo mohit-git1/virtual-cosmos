@@ -28,16 +28,28 @@ io.on("connection" , (socket) =>{
         };
 
     socket.emit("currentUsers", users);
-    socket.broadcast.emit("newUser", {
-        socket.broadcast.emit("newYuser",
-            {
+
+        socket.broadcast.emit("newYuser", {
                 id: socket.id,
                 x:100,
                 y:100
-            }
-        );
+            });
+    
 
     });
 
+socket.on("move", (data) => {
 
-})
+  users[socket.id] = data;
+
+  io.emit("userMoved", {
+    id: socket.id,
+    ...data
+  });
+
+});
+
+
+
+
+
