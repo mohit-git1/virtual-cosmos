@@ -43,6 +43,9 @@ function Cosmos({ onProximityChange }) {
       mapContainer = new PIXI.Container();
       app.stage.addChild(mapContainer);
 
+      const connectionLayer = new PIXI.Graphics();
+      app.stage.addChild(connectionLayer);
+
       setupSocketListeners();
       setupKeyboard();
       
@@ -50,7 +53,7 @@ function Cosmos({ onProximityChange }) {
       app.ticker.add((time) => {
         updateMovement();
         interpolateRemotePlayers();
-        checkProximity();
+        checkProximity(connectionLayer);
       });
     };
 
@@ -165,7 +168,9 @@ function Cosmos({ onProximityChange }) {
       });
     };
 
-    const checkProximity = () => {
+    const checkProximity = (connectionLayer) => {
+      connectionLayer.clear();
+      
       const myId = myPlayerIdRef.current;
       if (!myId || !playersRef.current[myId]) return;
       
@@ -188,6 +193,13 @@ function Cosmos({ onProximityChange }) {
 
       // Simple implementation: connect to the single nearest player if in proximity
       if (nearestId) {
+        const nearestP = playersRef.current[nearestId];
+        
+        // Draw connection line
+        connectionLayer.lineStyle(2, 0x00F0FF, 0.6);
+        connectionLayer.moveTo(myP.x, myP.y);
+        connectionLayer.lineTo(nearestP.x, nearestP.y);
+        
         // Create canonical room ID
         const roomName = [myId, nearestId].sort().join("-");
         if (roomName !== proximityRoom) {
