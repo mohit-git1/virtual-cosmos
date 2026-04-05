@@ -19,6 +19,8 @@ server.listen(3000, () => {
 });
 const users = {}; // storing socketID  x and y postions
 
+
+//user connection controls
 io.on("connection" , (socket) =>{
     console.log("User is Connected: ", socket.id);
         users[socket.id] = {
@@ -38,6 +40,8 @@ io.on("connection" , (socket) =>{
 
     });
 
+    // User movement
+
 socket.on("move", (data) => {
 
   users[socket.id] = data;
@@ -49,6 +53,16 @@ socket.on("move", (data) => {
 
 });
 
+
+// handle user disconnect : removes user from memeory and notifies other users of the disconneciotn whene user leaves
+
+socket.on("disconnect", () => {
+
+  delete users[socket.id];
+
+  io.emit("userDisconnected", socket.id);
+
+});
 
 
 
