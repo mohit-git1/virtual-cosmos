@@ -11,6 +11,10 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
+    if (socket.connected) {
+      setIsConnected(true);
+    }
+
     socket.on("connect", () => {
       setIsConnected(true);
     });
