@@ -5,10 +5,12 @@ import { isInProximity } from "./utils/Distance";
 
 function Cosmos({ onProximityChange }) {
   const canvasRef = useRef(null);
+  const avatarLayerRef = useRef(null);
   const playersRef = useRef({});
   const appRef = useRef(null);
   const keysRef = useRef({});
   const myPlayerIdRef = useRef(null);
+  const domElementsRef = useRef({});
 
   // Constants
   const SPEED = 4; // pixels per frame
@@ -16,6 +18,7 @@ function Cosmos({ onProximityChange }) {
   useEffect(() => {
     let app;
     let mapContainer;
+    let connectionLayer;
     let proximityRoom = null;
     let lastEmitTime = 0;
 
@@ -24,7 +27,7 @@ function Cosmos({ onProximityChange }) {
       await app.init({
         width: 1200,
         height: 800,
-        backgroundColor: 0x11141C,
+        backgroundColor: 0xE8D5B5, // wood/carpet-like base color
         antialias: true,
       });
 
@@ -33,37 +36,76 @@ function Cosmos({ onProximityChange }) {
           canvasRef.current.appendChild(app.canvas);
       }
 
-      // Draw Grid Background for spatial awareness
+      // Draw Grid/Tiles Background
       const grid = new PIXI.Graphics();
-      grid.lineStyle(1, 0xFFFFFF, 0.05);
-      for(let i=0; i<1200; i+=50) { grid.moveTo(i, 0); grid.lineTo(i, 800); }
-      for(let j=0; j<800; j+=50) { grid.moveTo(0, j); grid.lineTo(1200, j); }
+      grid.lineStyle(1, 0x000000, 0.05);
+      for(let i=0; i<=1200; i+=60) { grid.moveTo(i, 0); grid.lineTo(i, 800); }
+      for(let j=0; j<=800; j+=60) { grid.moveTo(0, j); grid.lineTo(1200, j); }
       app.stage.addChild(grid);
+
+      // Draw Rooms
+      const roomsContainer = new PIXI.Container();
+      const drawRoom = (x, y, w, h, label) => {
+        const roomBg = new PIXI.Graphics();
+        roomBg.beginFill(0xC2A878, 0.4);
+        roomBg.lineStyle(4, 0x8C714A, 0.8);
+        roomBg.drawRoundedRect(x, y, w, h, 8);
+        roomBg.endFill();
+        roomsContainer.addChild(roomBg);
+
+        const text = new PIXI.Text({ text: label, style: { fontFamily: 'sans-serif', fontSize: 18, fill: 0x5C4A31, fontWeight: 'bold' } });
+        text.x = x + 16;
+        text.y = y + 16;
+        roomsContainer.addChild(text);
+      };
+      
+      drawRoom(100, 100, 300, 250, "Room 1");
+      drawRoom(500, 100, 300, 250, "Room 2");
+      app.stage.addChild(roomsContainer);
 
       mapContainer = new PIXI.Container();
       app.stage.addChild(mapContainer);
 
-      const connectionLayer = new PIXI.Graphics();
+      connectionLayer = new PIXI.Graphics();
       app.stage.addChild(connectionLayer);
 
       setupSocketListeners();
       setupKeyboard();
       
       // Setup Game Loop
-      app.ticker.add((time) => {
+      app.ticker.add(() => {
         updateMovement();
         interpolateRemotePlayers();
         checkProximity(connectionLayer);
+        updateDOMPositions();
       });
+    };
+
+    const createDOMElement = (id, isMe) => {
+       if (!avatarLayerRef.current) return null;
+       const div = document.createElement('div');
+       div.id = `avatar-${id}`;
+       div.className = "absolute flex flex-col items-center justify-center transition-transform duration-75 will-change-transform z-20 pointer-events-none";
+       // We center it around the coordinate: -50% -100% basically to put it centered horizontally and above the circle physically
+       div.innerHTML = `
+         <div class="px-2 py-0.5 rounded-full bg-black/60 shadow-md flex items-center space-x-1.5 backdrop-blur-sm -translate-y-[28px] -translate-x-[50%] absolute">
+           <span class="w-[6px] h-[6px] ${isMe ? 'bg-green-400' : 'bg-green-400'} rounded-full"></span>
+           <span class="text-white text-[10px] font-bold tracking-wide whitespace-nowrap">
+             ${isMe ? 'You' : id.substring(0, 5)}
+           </span>
+         </div>
+       `;
+       avatarLayerRef.current.appendChild(div);
+       return div;
     };
 
     const drawPlayer = (playerData, isMe) => {
       const g = new PIXI.Graphics();
-      const color = isMe ? 0x00F0FF : 0xAA3BFF;
+      // Circle instead of sprite based on core constraints
+      const color = isMe ? 0x00F0FF : 0x4CAF50;
       
-      // Draw smooth circle
       g.beginFill(color);
-      g.drawCircle(0, 0, 16);
+      g.drawCircle(0, 0, 12); // Slightly smaller circle
       g.endFill();
       
       // Give local player a little glow
@@ -74,18 +116,30 @@ function Cosmos({ onProximityChange }) {
         glow.endFill();
         g.addChildAt(glow, 0);
       } else {
-        // Outline for remotes
-        g.lineStyle(2, 0xFFFFFF, 0.5);
-        g.drawCircle(0,0,16);
+        g.lineStyle(2, 0xFFFFFF, 0.8);
+        g.drawCircle(0,0,12);
       }
       
-      // Attach target data for interpolation
+      // Shadow
+      const shadow = new PIXI.Graphics();
+      shadow.beginFill(0x000000, 0.2);
+      shadow.drawEllipse(0, 16, 12, 4);
+      shadow.endFill();
+      g.addChildAt(shadow, 0);
+      
       g.x = playerData.x;
       g.y = playerData.y;
       g.targetX = playerData.x;
       g.targetY = playerData.y;
       
       mapContainer.addChild(g);
+      
+      // Create corresponding DOM label
+      const domEl = createDOMElement(playerData.id || myPlayerIdRef.current, isMe);
+      if (domEl) {
+         domElementsRef.current[playerData.id || myPlayerIdRef.current] = domEl;
+      }
+
       return g;
     };
 
@@ -95,7 +149,7 @@ function Cosmos({ onProximityChange }) {
       socket.on("currentUsers", (users) => {
         Object.keys(users).forEach((id) => {
           if (!playersRef.current[id]) {
-            playersRef.current[id] = drawPlayer(users[id], id === myPlayerIdRef.current);
+            playersRef.current[id] = drawPlayer({ id, ...users[id] }, id === myPlayerIdRef.current);
           }
         });
       });
@@ -120,6 +174,10 @@ function Cosmos({ onProximityChange }) {
           mapContainer.removeChild(playersRef.current[id]);
           playersRef.current[id].destroy();
           delete playersRef.current[id];
+        }
+        if (domElementsRef.current[id]) {
+          domElementsRef.current[id].remove();
+          delete domElementsRef.current[id];
         }
       });
     };
@@ -168,6 +226,16 @@ function Cosmos({ onProximityChange }) {
       });
     };
 
+    const updateDOMPositions = () => {
+      Object.keys(playersRef.current).forEach(id => {
+        const p = playersRef.current[id];
+        const domEl = domElementsRef.current[id];
+        if (domEl) {
+          domEl.style.transform = `translate(${p.x}px, ${p.y}px)`;
+        }
+      });
+    };
+
     const checkProximity = (connectionLayer) => {
       connectionLayer.clear();
       
@@ -182,7 +250,6 @@ function Cosmos({ onProximityChange }) {
         if(id === myId) return;
         const otherP = playersRef.current[id];
         if(isInProximity(myP.x, myP.y, otherP.x, otherP.y)) {
-          // get dist to find nearest
           const dist = Math.sqrt(Math.pow(myP.x - otherP.x, 2) + Math.pow(myP.y - otherP.y, 2));
           if(dist < nearestDist) {
             nearestDist = dist;
@@ -191,16 +258,20 @@ function Cosmos({ onProximityChange }) {
         }
       });
 
-      // Simple implementation: connect to the single nearest player if in proximity
       if (nearestId) {
         const nearestP = playersRef.current[nearestId];
         
         // Draw connection line
-        connectionLayer.lineStyle(2, 0x00F0FF, 0.6);
+        connectionLayer.lineStyle(2, 0xFFFFFF, 0.4);
         connectionLayer.moveTo(myP.x, myP.y);
         connectionLayer.lineTo(nearestP.x, nearestP.y);
         
-        // Create canonical room ID
+        // Highlight circle around both
+        connectionLayer.beginFill(0xFFFFFF, 0.1);
+        connectionLayer.drawCircle(myP.x, myP.y, 100);
+        connectionLayer.drawCircle(nearestP.x, nearestP.y, 100);
+        connectionLayer.endFill();
+        
         const roomName = [myId, nearestId].sort().join("-");
         if (roomName !== proximityRoom) {
           proximityRoom = roomName;
@@ -224,7 +295,6 @@ function Cosmos({ onProximityChange }) {
       socket.off("userMoved");
       socket.off("userDisconnected");
       
-      // Remove all event listeners and destroy pixi safely
       window.removeEventListener("keydown", () => {});
       window.removeEventListener("keyup", () => {});
       
@@ -235,7 +305,12 @@ function Cosmos({ onProximityChange }) {
     };
   }, []);
 
-  return <div ref={canvasRef} className="w-full h-full cursor-crosshair"></div>;
+  return (
+    <div className="relative w-[1200px] h-[800px] rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/10 m-8">
+      <div ref={canvasRef} className="absolute inset-0 z-0"></div>
+      <div ref={avatarLayerRef} className="avatar-layer absolute inset-0 z-10 pointer-events-none"></div>
+    </div>
+  );
 }
 
 export default Cosmos;

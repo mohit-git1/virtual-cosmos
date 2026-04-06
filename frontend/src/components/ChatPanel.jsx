@@ -44,7 +44,7 @@ export default function ChatPanel({ room, connectedUsers, currentUserId }) {
   if (!room) return null;
 
   return (
-    <div className="flex flex-col h-full w-[350px] bg-cosmos-panel/90 backdrop-blur-md border-l border-white/10 shadow-2xl">
+    <div className="chat-panel flex flex-col h-full w-[350px] bg-cosmos-panel/90 backdrop-blur-md border-l border-white/10 shadow-2xl">
       <div className="p-5 border-b border-white/10 bg-white/5">
         <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#00F0FF] to-[#0080FF]">Proximity Chat</h2>
         <p className="text-sm text-gray-400 mt-1">
