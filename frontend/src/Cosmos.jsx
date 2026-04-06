@@ -99,18 +99,18 @@ export default function Cosmos({ onProximityChange }) {
        
        // Creates an HTML div that holds the character label, drawn above canvas layer
        const div = document.createElement('div');
-       div.id = \`avatar-\${id}\`;
+       div.id = `avatar-${id}`;
        div.className = "absolute flex flex-col items-center justify-center transition-transform duration-75 will-change-transform z-20 pointer-events-none";
        
        // Center align over the graphic circle using translation trick
-       div.innerHTML = \`
+       div.innerHTML = `
          <div class="px-2 py-0.5 rounded-full bg-black/60 shadow-md flex items-center space-x-1.5 backdrop-blur-sm -translate-y-[28px] -translate-x-[50%] absolute">
-           <span class="w-[6px] h-[6px] \${isMe ? 'bg-green-400' : 'bg-green-400'} rounded-full"></span>
+           <span class="w-[6px] h-[6px] ${isMe ? 'bg-green-400' : 'bg-green-400'} rounded-full"></span>
            <span class="text-white text-[10px] font-bold tracking-wide whitespace-nowrap">
-             \${isMe ? 'You' : id.substring(0, 5)}
+             ${isMe ? 'You' : id.substring(0, 5)}
            </span>
          </div>
-       \`;
+       `;
        avatarLayerRef.current.appendChild(div);
        return div;
     };
@@ -254,7 +254,7 @@ export default function Cosmos({ onProximityChange }) {
         const p = playersRef.current[id];
         const domEl = domElementsRef.current[id];
         if (domEl) {
-          domEl.style.transform = \`translate(\${p.x}px, \${p.y}px)\`;
+          domEl.style.transform = `translate(${p.x}px, ${p.y}px)`;
         }
       });
     };
