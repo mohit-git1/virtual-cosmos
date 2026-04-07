@@ -64,7 +64,7 @@ export default function ChatPanel({ room, connectedUsers, currentUserId, initial
       <div className="p-5 border-b border-white/10 bg-white/5">
         <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#00F0FF] to-[#0080FF]">TuteDude</h2>
         <p className="text-sm text-gray-400 mt-1">
-          Connected with {connectedUsers.length} player(s) nearby
+          Chatting with {connectedUsers.length > 0 ? connectedUsers.map(u => u.name || u.id?.substring(0,5)).join(', ') : '...'}
         </p>
       </div>
 

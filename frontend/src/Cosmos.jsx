@@ -355,6 +355,11 @@ export default function Cosmos({ username, onProximityChange }) {
         
         const roomName = [myId, nearestId].sort().join("-");
         if (roomName !== proximityRoom) {
+          if (proximityRoom !== null) {
+             socket.emit("leaveRoom", proximityRoom);
+             const oldOtherId = proximityRoom.replace(myId, "").replace("-", "");
+             socket.emit("proximity:leave", oldOtherId);
+          }
           proximityRoom = roomName;
           socket.emit("joinRoom", proximityRoom);
           socket.emit("proximity:enter", nearestId);
@@ -363,7 +368,7 @@ export default function Cosmos({ username, onProximityChange }) {
           
           socket.once("chat:history:response", (msgs) => {
             console.log(`History received on frontend: ${msgs.length} messages`);
-            onProximityChange(true, [nearestId], msgs);
+            onProximityChange(true, [{ id: nearestId, name: nearestP.name }], msgs);
           });
           
           console.log("Joined proximity room", proximityRoom);
