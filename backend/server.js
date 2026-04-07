@@ -41,6 +41,8 @@ io.on("connection", (socket) => {
       x: users[socket.id].x,
       y: users[socket.id].y
     });
+
+    socket.broadcast.emit("user:joined", { id: socket.id, name });
   });
 
   // movement update
@@ -72,18 +74,30 @@ io.on("connection", (socket) => {
 
   // messaging
   socket.on("sendMessage", (msgData) => {
-    // msgData contains { room, senderId, text, timestamp }
     socket.to(msgData.room).emit("chatMessage", msgData);
+  });
+
+  // proximity event broadcasting pairing bounds
+  socket.on("proximity:enter", (otherId) => {
+    socket.to(otherId).emit("proximity:enter", { id: socket.id, name: users[socket.id]?.name });
+  });
+
+  socket.on("proximity:leave", (otherId) => {
+    socket.to(otherId).emit("proximity:leave", { id: socket.id, name: users[socket.id]?.name });
   });
 
   // disconnect
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
+    if (users[socket.id]) {
+      socket.broadcast.emit("user:left", { id: socket.id, name: users[socket.id].name });
+    }
     delete users[socket.id];
     io.emit("userDisconnected", socket.id);
   });
 });
 
-server.listen(3000, () => {
-  console.log("Server running on port 3000");
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });

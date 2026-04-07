@@ -283,9 +283,10 @@ export default function Cosmos({ username, onProximityChange }) {
       if (!myId || !playersRef.current[myId] || !cameraContainer) return;
       
       const myP = playersRef.current[myId];
-      // Screen target width=1200, height=800 -> Center = 600, 400
-      cameraContainer.x = 600 - myP.x * zoomLevel;
-      cameraContainer.y = 400 - myP.y * zoomLevel;
+      const targetX = 600 - myP.x * zoomLevel;
+      const targetY = 400 - myP.y * zoomLevel;
+      cameraContainer.x += (targetX - cameraContainer.x) * 0.08;
+      cameraContainer.y += (targetY - cameraContainer.y) * 0.08;
     };
 
     const interpolateRemotePlayers = () => {
@@ -325,8 +326,8 @@ export default function Cosmos({ username, onProximityChange }) {
         if(id === myId) return;
         const otherP = playersRef.current[id];
         
-        if(isInProximity(myP.x, myP.y, otherP.x, otherP.y)) {
-          const dist = Math.sqrt(Math.pow(myP.x - otherP.x, 2) + Math.pow(myP.y - otherP.y, 2));
+        const dist = Math.sqrt(Math.pow(myP.x - otherP.x, 2) + Math.pow(myP.y - otherP.y, 2));
+        if(dist < 150) {
           if(dist < nearestDist) {
             nearestDist = dist;
             nearestId = id;
@@ -348,12 +349,17 @@ export default function Cosmos({ username, onProximityChange }) {
         if (roomName !== proximityRoom) {
           proximityRoom = roomName;
           socket.emit("joinRoom", proximityRoom);
+          socket.emit("proximity:enter", nearestId);
           console.log("Joined proximity room", proximityRoom);
           onProximityChange(true, [nearestId]);
         }
       } else {
         if (proximityRoom !== null) {
           socket.emit("leaveRoom", proximityRoom);
+          // We don't have the explicit nearestId cached securely from leave, but we can reconstruct or drop the room
+          // Wait, we need to pass the other id to proximity:leave. Let's parse it from roomName:
+          const otherId = proximityRoom.replace(myId, "").replace("-", "");
+          socket.emit("proximity:leave", otherId);
           console.log("Left proximity room", proximityRoom);
           proximityRoom = null;
           onProximityChange(false, []);

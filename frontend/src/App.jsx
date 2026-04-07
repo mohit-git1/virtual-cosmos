@@ -4,6 +4,7 @@ import ChatPanel from "./components/ChatPanel";
 import TopBar from "./components/TopBar";
 import BottomControls from "./components/BottomControls";
 import JoinScreen from "./components/JoinScreen";
+import ActivityFeed from "./components/ActivityFeed";
 import socket from "./socket";
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
   }, []);
 
   const handleJoin = (name) => {
+    socket.connect();
     setUsername(name);
     setHasJoined(true);
   };
@@ -70,6 +72,8 @@ function App() {
                  }}
               />
             </div>
+            
+            <ActivityFeed />
 
             {room && (
               <div className="absolute right-0 top-0 bottom-0 z-10 animate-fade-in-right">
