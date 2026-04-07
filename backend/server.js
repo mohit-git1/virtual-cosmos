@@ -19,31 +19,42 @@ const users = {}; // store user positions
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  // create new user at random distinct position
-  users[socket.id] = {
-    x: 100 + Math.random() * 200,
-    y: 100 + Math.random() * 200
-  };
+  // Let users join explicitly
+  socket.on("joinSpace", (name) => {
+    // create new user at random distinct position
+    users[socket.id] = {
+      id: socket.id,
+      name: name,
+      x: 100 + Math.random() * 200,
+      y: 100 + Math.random() * 200
+    };
 
-  // send existing users to the new user
-  socket.emit("currentUsers", users);
+    console.log(`User registered: ${name} (${socket.id})`);
 
-  // notify other users about new user
-  socket.broadcast.emit("newUser", {
-    id: socket.id,
-    x: users[socket.id].x,
-    y: users[socket.id].y
+    // send existing users to the new user
+    socket.emit("currentUsers", users);
+
+    // notify other users about new user
+    socket.broadcast.emit("newUser", {
+      id: socket.id,
+      name: name,
+      x: users[socket.id].x,
+      y: users[socket.id].y
+    });
   });
 
   // movement update
   socket.on("move", (data) => {
-    users[socket.id] = data;
+    if (users[socket.id]) {
+      users[socket.id].x = data.x;
+      users[socket.id].y = data.y;
 
-    io.emit("userMoved", {
-      id: socket.id,
-      x: data.x,
-      y: data.y
-    });
+      io.emit("userMoved", {
+        id: socket.id,
+        x: data.x,
+        y: data.y
+      });
+    }
   });
 
   // chat rooms

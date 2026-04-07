@@ -3,61 +3,64 @@ import * as PIXI from "pixi.js";
 import socket from "./socket";
 import { isInProximity } from "./utils/Distance";
 
-export default function Cosmos({ onProximityChange }) {
-  // References map to specific parts of our react setup to span across re-renders
+export default function Cosmos({ username, onProximityChange }) {
   const canvasRef = useRef(null); 
   const avatarLayerRef = useRef(null); 
-  const playersRef = useRef({}); // keep track of drawing visuals for players
+  const playersRef = useRef({}); 
   const appRef = useRef(null); 
-  const keysRef = useRef({}); // keyboard movement states tracking
+  const keysRef = useRef({}); 
   const myPlayerIdRef = useRef(null); 
-  const domElementsRef = useRef({}); // maintain HTML elements showing text labels
+  const domElementsRef = useRef({}); 
 
-  const SPEED = 4; // Set a flat movement speed for physics loop
+  const SPEED = 4;
 
   useEffect(() => {
     let app;
+    let cameraContainer;
     let mapContainer;
     let connectionLayer;
     let proximityRoom = null;
     let lastEmitTime = 0;
+    
+    // Zoom control states
+    let zoomLevel = 1.0;
+    const MIN_ZOOM = 0.5;
+    const MAX_ZOOM = 2.0;
 
-    // STEP 1: INITIALIZE THE PIXI CANVAS AND VIRTUAL WORLD
     const initPixi = async () => {
       app = new PIXI.Application();
       await app.init({
         width: 1200,
         height: 800,
-        backgroundColor: 0xE8D5B5, // Set rendering floor color 
+        backgroundColor: 0xE8D5B5,
         antialias: true,
       });
 
       appRef.current = app;
       
-      // Prevent attaching multiple canvases during React StrictMode load
       if (canvasRef.current && canvasRef.current.children.length === 0) {
           canvasRef.current.appendChild(app.canvas);
       }
 
-      // Draw Grid Base (Creates physical scale and structure)
+      cameraContainer = new PIXI.Container();
+      app.stage.addChild(cameraContainer);
+
+      mapContainer = new PIXI.Container();
+      cameraContainer.addChild(mapContainer);
+
       const grid = new PIXI.Graphics();
       grid.beginFill(0x000000);
-      for(let i = 0; i <= 1200; i += 60) { grid.moveTo(i, 0); grid.lineTo(i, 800); }
-      for(let j = 0; j <= 800; j += 60) { grid.moveTo(0, j); grid.lineTo(1200, j); }
-      // This uses PIXI stroke styles natively to set grid opacity
+      for(let i = 0; i <= 2400; i += 60) { grid.moveTo(i, 0); grid.lineTo(i, 1600); }
+      for(let j = 0; j <= 1600; j += 60) { grid.moveTo(0, j); grid.lineTo(2400, j); }
       grid.alpha = 0.05;
-      app.stage.addChild(grid);
+      mapContainer.addChild(grid);
 
-      // Draw Room Zones (Provide visual structure boundaries)
       const roomsContainer = new PIXI.Container();
       const drawRoom = (x, y, w, h, label) => {
         const roomBg = new PIXI.Graphics();
-        
-        // Use standard fill formats required in V8 PixiJS
         roomBg.rect(x, y, w, h);
         roomBg.fill({ color: 0xC2A878, alpha: 0.4});
         roomBg.stroke({ color: 0x8C714A, width: 4});
-        
         roomsContainer.addChild(roomBg);
 
         const text = new PIXI.Text({ text: label, style: { fontFamily: 'sans-serif', fontSize: 18, fill: 0x5C4A31, fontWeight: 'bold' } });
@@ -66,48 +69,68 @@ export default function Cosmos({ onProximityChange }) {
         roomsContainer.addChild(text);
       };
       
-      // Render sample rooms into the space
       drawRoom(100, 100, 300, 250, "Room 1");
       drawRoom(500, 100, 300, 250, "Room 2");
-      app.stage.addChild(roomsContainer);
+      mapContainer.addChild(roomsContainer);
 
-      // Create a layer specifically dedicated to player avatars moving around
-      mapContainer = new PIXI.Container();
-      app.stage.addChild(mapContainer);
-
-      // Create a drawing layer for the proximity/interaction effects 
       connectionLayer = new PIXI.Graphics();
-      app.stage.addChild(connectionLayer);
+      mapContainer.addChild(connectionLayer);
 
-      // Initialize game logic handlers
+      // Make the background interactive for click-to-move
+      const hitArea = new PIXI.Graphics();
+      hitArea.rect(0, 0, 2400, 1600);
+      hitArea.fill({ color: 0x000000, alpha: 0 }); // invisible
+      hitArea.eventMode = 'static';
+      hitArea.on('pointerdown', (e) => {
+        const myId = myPlayerIdRef.current;
+        if (!myId || !playersRef.current[myId]) return;
+        
+        // Convert screen click into world target
+        const worldPos = cameraContainer.toLocal(e.global);
+        
+        const myP = playersRef.current[myId];
+        // Only register click targets inside world bounds
+        myP.clickTargetX = Math.max(16, Math.min(2400 - 16, worldPos.x));
+        myP.clickTargetY = Math.max(16, Math.min(1600 - 16, worldPos.y));
+      });
+      mapContainer.addChild(hitArea);
+
       setupSocketListeners();
       setupKeyboard();
+      setupZoom();
       
-      // STEP 2: SETUP GAME LOOP TICKER
-      // This block of code runs ~60 times a second
       app.ticker.add(() => {
-        updateMovement();           // Move our character if keys are pressed
-        interpolateRemotePlayers(); // Move remote characters to their target destinations smoothly
-        checkProximity(connectionLayer); // Run proximity calculations to see who you are near
-        updateDOMPositions();       // Sync the HTML labels (usernames) with circle positions
+        updateMovement();           
+        interpolateRemotePlayers(); 
+        updateCameraFollow();
+        checkProximity(connectionLayer); 
+        updateDOMPositions();       
       });
     };
 
-    // STEP 3: AVATAR AND ELEMENT RENDERERS
-    const createDOMElement = (id, isMe) => {
+    const setupZoom = () => {
+      if (app && app.canvas) {
+        app.canvas.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
+          zoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomLevel + zoomDelta));
+          cameraContainer.scale.set(zoomLevel, zoomLevel);
+        });
+      }
+    };
+
+    const createDOMElement = (id, name, isMe) => {
        if (!avatarLayerRef.current) return null;
        
-       // Creates an HTML div that holds the character label, drawn above canvas layer
        const div = document.createElement('div');
        div.id = `avatar-${id}`;
-       div.className = "absolute flex flex-col items-center justify-center transition-transform duration-75 will-change-transform z-20 pointer-events-none";
+       div.className = "absolute flex flex-col items-center justify-center will-change-transform z-20 pointer-events-none origin-top-left";
        
-       // Center align over the graphic circle using translation trick
        div.innerHTML = `
          <div class="px-2 py-0.5 rounded-full bg-black/60 shadow-md flex items-center space-x-1.5 backdrop-blur-sm -translate-y-[28px] -translate-x-[50%] absolute">
-           <span class="w-[6px] h-[6px] ${isMe ? 'bg-green-400' : 'bg-green-400'} rounded-full"></span>
+           <span class="w-[6px] h-[6px] ${isMe ? 'bg-green-400' : 'bg-gray-400'} rounded-full"></span>
            <span class="text-white text-[10px] font-bold tracking-wide whitespace-nowrap">
-             ${isMe ? 'You' : id.substring(0, 5)}
+             ${name || id.substring(0, 5)}
            </span>
          </div>
        `;
@@ -116,38 +139,38 @@ export default function Cosmos({ onProximityChange }) {
     };
 
     const drawPlayer = (playerData, isMe) => {
-      const g = new PIXI.Graphics();
+      const g = new PIXI.Container();
+      const circle = new PIXI.Graphics();
       const color = isMe ? 0x00F0FF : 0x4CAF50;
       
-      // Draw simple circular avatar
-      g.circle(0, 0, 12);
-      g.fill({ color: color });
+      circle.circle(0, 0, 12);
+      circle.fill({ color: color });
       
-      // Apply highlights and shadows
       if(isMe){
         const glow = new PIXI.Graphics();
         glow.circle(0, 0, 24);
         glow.fill({ color: 0x00F0FF, alpha: 0.2});
         g.addChildAt(glow, 0);
       } else {
-        g.stroke({ color: 0xFFFFFF, width: 2, alpha: 0.8});
+        circle.stroke({ color: 0xFFFFFF, width: 2, alpha: 0.8});
       }
       
       const shadow = new PIXI.Graphics();
       shadow.ellipse(0, 16, 12, 4);
       shadow.fill({ color: 0x000000, alpha: 0.2});
       g.addChildAt(shadow, 0);
+      g.addChild(circle);
       
-      // Setup the state for target interpolation
       g.x = playerData.x;
       g.y = playerData.y;
       g.targetX = playerData.x;
       g.targetY = playerData.y;
+      g.clickTargetX = null;
+      g.clickTargetY = null;
       
       mapContainer.addChild(g);
       
-      // Attach the HTML label element that will float above the player
-      const domEl = createDOMElement(playerData.id || myPlayerIdRef.current, isMe);
+      const domEl = createDOMElement(playerData.id || myPlayerIdRef.current, isMe ? "You" : playerData.name, isMe);
       if (domEl) {
          domElementsRef.current[playerData.id || myPlayerIdRef.current] = domEl;
       }
@@ -155,27 +178,23 @@ export default function Cosmos({ onProximityChange }) {
       return g;
     };
 
-    // STEP 4: MULTIPLAYER SYNC
     const setupSocketListeners = () => {
       myPlayerIdRef.current = socket.id;
 
-      // Handle receiving all currently playing users on initial join
       socket.on("currentUsers", (users) => {
         Object.keys(users).forEach((id) => {
           if (!playersRef.current[id]) {
-            playersRef.current[id] = drawPlayer({ id, ...users[id] }, id === myPlayerIdRef.current);
+            playersRef.current[id] = drawPlayer(users[id], id === myPlayerIdRef.current);
           }
         });
       });
 
-      // Handle another remote player freshly connecting
       socket.on("newUser", (user) => {
         if (!playersRef.current[user.id]) {
           playersRef.current[user.id] = drawPlayer(user, false);
         }
       });
 
-      // Update character states to new requested target locations
       socket.on("userMoved", (info) => {
         if (info.id === myPlayerIdRef.current) return;
         const p = playersRef.current[info.id];
@@ -185,7 +204,6 @@ export default function Cosmos({ onProximityChange }) {
         }
       });
 
-      // Remove character data and graphics if someone leaves
       socket.on("userDisconnected", (id) => {
         if (playersRef.current[id]) {
           mapContainer.removeChild(playersRef.current[id]);
@@ -197,73 +215,105 @@ export default function Cosmos({ onProximityChange }) {
           delete domElementsRef.current[id];
         }
       });
+
+      // Emit join after attaching listeners to prevent missing initial spawn callback
+      socket.emit("joinSpace", username);
     };
 
     const setupKeyboard = () => {
-      window.addEventListener("keydown", (e) => { keysRef.current[e.key.toLowerCase()] = true; });
+      window.addEventListener("keydown", (e) => { 
+        keysRef.current[e.key.toLowerCase()] = true; 
+        // Break out of click-targeting if manually stepping
+        const myId = myPlayerIdRef.current;
+        if (myId && playersRef.current[myId]) {
+           playersRef.current[myId].clickTargetX = null;
+           playersRef.current[myId].clickTargetY = null;
+        }
+      });
       window.addEventListener("keyup", (e) => { keysRef.current[e.key.toLowerCase()] = false; });
     };
 
-    // STEP 5: MOVEMENT ENGINE
     const updateMovement = () => {
-      // Find our own player graphic in the map
       const myId = myPlayerIdRef.current;
       if (!myId || !playersRef.current[myId]) return;
 
       const myP = playersRef.current[myId];
       let moved = false;
 
-      // React to keyboard key triggers
-      if (keysRef.current["w"] || keysRef.current["arrowup"]) { myP.y -= SPEED; moved = true; }
-      if (keysRef.current["s"] || keysRef.current["arrowdown"]) { myP.y += SPEED; moved = true; }
-      if (keysRef.current["a"] || keysRef.current["arrowleft"]) { myP.x -= SPEED; moved = true; }
-      if (keysRef.current["d"] || keysRef.current["arrowright"]) { myP.x += SPEED; moved = true; }
+      // Click to move logic overrides keyboard until keyboard interrupts
+      if (myP.clickTargetX !== null && myP.clickTargetY !== null) {
+         const dx = myP.clickTargetX - myP.x;
+         const dy = myP.clickTargetY - myP.y;
+         const distance = Math.sqrt(dx * dx + dy * dy);
+         if (distance > SPEED) {
+            myP.x += (dx / distance) * SPEED;
+            myP.y += (dy / distance) * SPEED;
+            moved = true;
+         } else {
+            myP.x = myP.clickTargetX;
+            myP.y = myP.clickTargetY;
+            myP.clickTargetX = null;
+            myP.clickTargetY = null;
+         }
+      } else {
+        if (keysRef.current["w"] || keysRef.current["arrowup"]) { myP.y -= SPEED; moved = true; }
+        if (keysRef.current["s"] || keysRef.current["arrowdown"]) { myP.y += SPEED; moved = true; }
+        if (keysRef.current["a"] || keysRef.current["arrowleft"]) { myP.x -= SPEED; moved = true; }
+        if (keysRef.current["d"] || keysRef.current["arrowright"]) { myP.x += SPEED; moved = true; }
+      }
 
-      // Restrict character from walking out of the 1200x800 bounding box
-      myP.x = Math.max(16, Math.min(1200 - 16, myP.x));
-      myP.y = Math.max(16, Math.min(800 - 16, myP.y));
+      myP.x = Math.max(16, Math.min(2400 - 16, myP.x));
+      myP.y = Math.max(16, Math.min(1600 - 16, myP.y));
 
-      // Broadcast position to other active users
       if (moved) {
         myP.targetX = myP.x;
         myP.targetY = myP.y;
         
         const now = Date.now();
-        // Prevent overwhelming backend socket connection by throttling to a 50ms pulse speed
         if (now - lastEmitTime > 50) {
           socket.emit("move", { x: myP.x, y: myP.y });
+          console.log("move event", { x: myP.x, y: myP.y });
           lastEmitTime = now;
         }
       }
     };
 
-    // Calculate fluid frames between where the user clicked a boundary to walk, and where they are
+    const updateCameraFollow = () => {
+      const myId = myPlayerIdRef.current;
+      if (!myId || !playersRef.current[myId] || !cameraContainer) return;
+      
+      const myP = playersRef.current[myId];
+      // Screen target width=1200, height=800 -> Center = 600, 400
+      cameraContainer.x = 600 - myP.x * zoomLevel;
+      cameraContainer.y = 400 - myP.y * zoomLevel;
+    };
+
     const interpolateRemotePlayers = () => {
       Object.keys(playersRef.current).forEach(id => {
         if (id === myPlayerIdRef.current) return;
         const p = playersRef.current[id];
-        // Math vector linear interpolation for smoothness
         p.x += (p.targetX - p.x) * 0.15;
         p.y += (p.targetY - p.y) * 0.15;
       });
     };
 
-    // Sync standard React HTML Dom elements relative to canvas pixel location
     const updateDOMPositions = () => {
+      if(!cameraContainer) return;
+
       Object.keys(playersRef.current).forEach(id => {
         const p = playersRef.current[id];
         const domEl = domElementsRef.current[id];
         if (domEl) {
-          domEl.style.transform = `translate(${p.x}px, ${p.y}px)`;
+          // Sync dom with camera scale + camera pan offsets
+          const screenX = cameraContainer.x + p.x * zoomLevel;
+          const screenY = cameraContainer.y + p.y * zoomLevel;
+          domEl.style.transform = `translate(${screenX}px, ${screenY}px) scale(${zoomLevel})`;
         }
       });
     };
 
-    // STEP 6: PROXIMITY DETECTION ALGORITHM
     const checkProximity = (connectionLayer) => {
-      // Clear visual bubbles initially
       connectionLayer.clear();
-      
       const myId = myPlayerIdRef.current;
       if (!myId || !playersRef.current[myId]) return;
       
@@ -271,15 +321,12 @@ export default function Cosmos({ onProximityChange }) {
       let nearestDist = Infinity;
       let nearestId = null;
 
-      // Loop through all users to establish physical location distances
       Object.keys(playersRef.current).forEach(id => {
         if(id === myId) return;
         const otherP = playersRef.current[id];
         
-        // We use boolean logic utilizing Pythagorean equation for exact distance checking
         if(isInProximity(myP.x, myP.y, otherP.x, otherP.y)) {
           const dist = Math.sqrt(Math.pow(myP.x - otherP.x, 2) + Math.pow(myP.y - otherP.y, 2));
-          // Hook onto nearest remote physical user
           if(dist < nearestDist) {
             nearestDist = dist;
             nearestId = id;
@@ -287,34 +334,27 @@ export default function Cosmos({ onProximityChange }) {
         }
       });
 
-      // If we find a player inside our trigger boundary
       if (nearestId) {
         const nearestP = playersRef.current[nearestId];
-        
-        // Draw the visual link line between both objects
         connectionLayer.moveTo(myP.x, myP.y);
         connectionLayer.lineTo(nearestP.x, nearestP.y);
         connectionLayer.stroke({ color: 0xFFFFFF, width: 2, alpha: 0.4});
         
-        // Draw interaction bubbles showing active proximity connections
         connectionLayer.circle(myP.x, myP.y, 100);
         connectionLayer.circle(nearestP.x, nearestP.y, 100);
         connectionLayer.fill({ color: 0xFFFFFF, alpha: 0.1});
         
-        // Build the socket connection identifier utilizing ascending string sort.
         const roomName = [myId, nearestId].sort().join("-");
-        
-        // Ensure a chat bridge opens to trigger the side UI Panel
         if (roomName !== proximityRoom) {
           proximityRoom = roomName;
           socket.emit("joinRoom", proximityRoom);
+          console.log("Joined proximity room", proximityRoom);
           onProximityChange(true, [nearestId]);
         }
-      // If we move away
       } else {
         if (proximityRoom !== null) {
-          // Drop the bridge
           socket.emit("leaveRoom", proximityRoom);
+          console.log("Left proximity room", proximityRoom);
           proximityRoom = null;
           onProximityChange(false, []);
         }
@@ -323,9 +363,7 @@ export default function Cosmos({ onProximityChange }) {
 
     initPixi();
 
-    // STEP 7: CLEANUP ENGINE ON UNMOUNT
     return () => {
-      // Disconnecting logic
       socket.off("currentUsers");
       socket.off("newUser");
       socket.off("userMoved");
@@ -333,20 +371,20 @@ export default function Cosmos({ onProximityChange }) {
       
       window.removeEventListener("keydown", () => {});
       window.removeEventListener("keyup", () => {});
+      if(appRef.current && appRef.current.canvas) {
+         appRef.current.canvas.removeEventListener("wheel", () => {});
+      }
       
       if (appRef.current) {
         appRef.current.destroy(true, { children: true });
         appRef.current = null;
       }
     };
-  }, []);
+  }, [username]);
 
   return (
     <div className="relative w-[1200px] h-[800px] rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/10 m-8">
-      {/* Container holding the background map and circles */}
       <div ref={canvasRef} className="absolute inset-0 z-0"></div>
-      
-      {/* Container holding the player text boxes mapped physically onto the player objects */}
       <div ref={avatarLayerRef} className="avatar-layer absolute inset-0 z-10 pointer-events-none"></div>
     </div>
   );
