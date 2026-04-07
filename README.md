@@ -11,8 +11,9 @@ Virtual Cosmos is a lightweight 2D multiplayer virtual environment where users c
 5. **Dynamic Chat System**: Automatically joining and leaving chat rooms based on position events, creating an authentic proximity-chat behavior.
 
 ## Tech Stack
-- **Frontend**: React, Vite, PixiJS (Canvas Rendering), Tailwind CSS (Styling/UI), Socket.IO-Client
-- **Backend**: Node.js, Express, Socket.IO
+- Frontend: React + Vite + PixiJS + Tailwind CSS
+- Backend: Node.js + Express + Socket.IO
+- Database: MongoDB + Mongoose
 
 ## Architecture
 - **Frontend Layer**: React manages the overarching UI, including the `TopBar`, `BottomControls`, and the `ChatPanel` side drawer. The React components manage state (`isConnected`, `room`, `connectedUsers`).
@@ -31,19 +32,18 @@ If the distance is less than 120 pixels, the two players are considered "in prox
 When the frontend moves a player natively, it updates its local target variables visually and concurrently emits a `"move"` event to the server. To avoid network flooding, this emission is throttled (~20 times a second).
 When the backend receives `"move"`, it updates the player's stored coordinates in server memory and broadcasts an event `"userMoved"` to all other clients. The other clients receive the new coordinates and use linear interpolation (lerp) to smoothly transition the player's on-screen avatar to the new target location.
 
-## Setup Instructions
+## Setup
+1. Clone the repo
+2. Copy `.env.example` to `.env` and fill in MONGODB_URI
+3. `cd backend && npm install && npm start`
+4. `cd frontend && npm install && npm run dev`
+5. Open `http://localhost:5173`
 
-Make sure you have Node and NPM installed locally. 
-
-### How to run backend
-1. Open a terminal and navigate to the backend directory: `cd backend`
-2. Install dependencies: `npm install`
-3. Start the Socket server: `npm start` (Runs on `http://localhost:3000`)
-
-### How to run frontend
-1. Open up a second standalone terminal mapping to the frontend: `cd frontend`
-2. Install dependencies: `npm install`
-3. Execute the Vite React application: `npm run dev`
-4. The frontend app should now be accessible at `http://localhost:5173`
-
-You can open multiple browser windows connecting to `http://localhost:5173` to test multiplayer interactions.
+## Features
+- Real-time multiplayer movement
+- Proximity-based chat (auto connect/disconnect at 150px)
+- Persistent chat history per player pair (MongoDB)
+- Live player count
+- TuteDude Activity Feed
+- Zone detection (Where am I?)
+- Connection session logging
