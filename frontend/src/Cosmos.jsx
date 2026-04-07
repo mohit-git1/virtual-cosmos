@@ -223,6 +223,9 @@ export default function Cosmos({ username, onProximityChange }) {
 
     const setupKeyboard = () => {
       window.addEventListener("keydown", (e) => { 
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return; // block WASD if typing
+        
         keysRef.current[e.key.toLowerCase()] = true; 
         // Break out of click-targeting if manually stepping
         const myId = myPlayerIdRef.current;
@@ -231,7 +234,11 @@ export default function Cosmos({ username, onProximityChange }) {
            playersRef.current[myId].clickTargetY = null;
         }
       });
-      window.addEventListener("keyup", (e) => { keysRef.current[e.key.toLowerCase()] = false; });
+      window.addEventListener("keyup", (e) => { 
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+        keysRef.current[e.key.toLowerCase()] = false; 
+      });
     };
 
     const updateMovement = () => {
@@ -351,9 +358,15 @@ export default function Cosmos({ username, onProximityChange }) {
           proximityRoom = roomName;
           socket.emit("joinRoom", proximityRoom);
           socket.emit("proximity:enter", nearestId);
+          console.log(`History requested for: ${nearestP.name}`);
           socket.emit("chat:history:request", { withId: nearestId, withName: nearestP.name });
+          
+          socket.once("chat:history:response", (msgs) => {
+            console.log(`History received on frontend: ${msgs.length} messages`);
+            onProximityChange(true, [nearestId], msgs);
+          });
+          
           console.log("Joined proximity room", proximityRoom);
-          onProximityChange(true, [nearestId]);
         }
       } else {
         if (proximityRoom !== null) {

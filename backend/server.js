@@ -99,11 +99,13 @@ io.on("connection", (socket) => {
   socket.on("sendMessage", async (msgData) => {
     socket.to(msgData.room).emit("chatMessage", msgData);
 
-    const toName = msgData.toName || msgData.room.replace(socket.id, "").replace("-", ""); // Temporary fallback calculation if pure P2P array isn't fully synced
+    const otherId = msgData.room.replace(socket.id, "").replace("-", ""); // Extract from P2P room name
+    const toName = users[otherId]?.name || msgData.toName; // Fallback to provided name
     const myName = socket.data.name;
 
-    if(myName && msgData.toId) {
-       const pairKey = [myName, msgData.toName].sort().join('__');
+    if(myName && toName) {
+       const pairKey = [myName, toName].sort().join('__');
+       console.log(`Saving message to DB: ${pairKey}`);
        try {
          await Message.create({ pairKey, senderName: myName, message: msgData.text });
          if (!chatHistory[pairKey]) chatHistory[pairKey] = [];
@@ -112,6 +114,8 @@ io.on("connection", (socket) => {
        } catch (err) {
           console.error("Message Save err:", err);
        }
+    } else {
+       console.log(`Failed to save DB: myName=${myName}, toName=${toName}`);
     }
   });
 
@@ -120,9 +124,11 @@ io.on("connection", (socket) => {
      if(!myName || !withName) return;
 
      const pairKey = [myName, withName].sort().join('__');
+     console.log(`History requested for: ${pairKey}`);
      
      try {
        const messages = await Message.find({ pairKey }).sort({ timestamp: 1 }).limit(200).lean();
+       console.log(`History found: ${messages.length} messages`);
        socket.emit("chat:history:response", messages.map(m => ({ senderName: m.senderName, message: m.message, timestamp: m.timestamp })));
      } catch(err) {
        console.error("History fetch err:", err);

@@ -31,11 +31,7 @@ function App() {
     socket.on("leftRoom", () => {
       setRoom(null);
       setConnectedUsers([]);
-      setInitialMessages([]);
-    });
-
-    socket.on("chat:history:response", (msgs) => {
-      setInitialMessages(msgs);
+      // Do NOT setInitialMessages([]); to allow ChatPanel to retain history across UI toggles
     });
 
     return () => {
@@ -69,9 +65,10 @@ function App() {
               
               <Cosmos 
                  username={username}
-                 onProximityChange={(inRange, users) => {
+                 onProximityChange={(inRange, users, msgs) => {
                    if (inRange) {
                      setConnectedUsers(users);
+                     if (msgs) setInitialMessages(msgs);
                    } else {
                      setConnectedUsers([]);
                    }

@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import React from "react";
 import socket from "../socket";
+
+const savedChats = new Map();
 
 export default function ChatPanel({ room, connectedUsers, currentUserId, initialMessages = [] }) {
   const [messages, setMessages] = useState(initialMessages);
@@ -7,8 +10,22 @@ export default function ChatPanel({ room, connectedUsers, currentUserId, initial
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    setMessages(initialMessages);
+    let merged = [...(savedChats.get(room) || [])];
+    initialMessages.forEach(im => {
+      if (!merged.find(m => m.timestamp === im.timestamp && m.text === im.text)) {
+        merged.push(im);
+      }
+    });
+    // Ensure chronological order
+    merged.sort((a,b) => a.timestamp - b.timestamp);
+    setMessages(merged);
   }, [room, initialMessages]);
+
+  useEffect(() => {
+    if (room && messages.length > 0) {
+      savedChats.set(room, messages);
+    }
+  }, [messages, room]);
 
   useEffect(() => {
     const handleNewMessage = (msg) => {
