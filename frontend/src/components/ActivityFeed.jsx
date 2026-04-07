@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import socket from "../socket";
 
 export default function ActivityFeed() {
   const [feed, setFeed] = useState([]);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const chatCounter = useRef(0);
 
   useEffect(() => {
     const addEvent = (msg, type) => {
@@ -22,23 +23,34 @@ export default function ActivityFeed() {
     };
 
     const handleProximityEnter = (other) => {
+      chatCounter.current = 0;
       addEvent(`💬 You are now near ${other.name}`, "near");
     };
 
     const handleProximityLeave = (other) => {
       addEvent(`👋 ${other.name} moved away`, "far");
+      addEvent(`💾 Chat with ${other.name} saved — ${chatCounter.current} messages`, "save");
+      chatCounter.current = 0;
+    };
+
+    const handleChatMessage = () => {
+      chatCounter.current += 1;
     };
 
     socket.on("user:joined", handleUserJoined);
     socket.on("user:left", handleUserLeft);
     socket.on("proximity:enter", handleProximityEnter);
     socket.on("proximity:leave", handleProximityLeave);
+    socket.on("chatMessage", handleChatMessage);
+    window.addEventListener("localChatSent", handleChatMessage);
 
     return () => {
       socket.off("user:joined", handleUserJoined);
       socket.off("user:left", handleUserLeft);
       socket.off("proximity:enter", handleProximityEnter);
       socket.off("proximity:leave", handleProximityLeave);
+      socket.off("chatMessage", handleChatMessage);
+      window.removeEventListener("localChatSent", handleChatMessage);
     };
   }, []);
 

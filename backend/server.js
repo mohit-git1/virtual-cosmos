@@ -65,6 +65,7 @@ io.on("connection", (socket) => {
     });
 
     socket.broadcast.emit("user:joined", { id: socket.id, name });
+    io.emit("room:count", { current: io.sockets.sockets.size, max: 50 });
   });
 
   // movement update
@@ -170,6 +171,7 @@ io.on("connection", (socket) => {
     }
     delete users[socket.id];
     io.emit("userDisconnected", socket.id);
+    io.emit("room:count", { current: io.sockets.sockets.size, max: 50 });
   });
 });
 

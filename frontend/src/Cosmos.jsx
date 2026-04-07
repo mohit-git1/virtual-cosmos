@@ -167,6 +167,7 @@ export default function Cosmos({ username, onProximityChange }) {
       g.targetY = playerData.y;
       g.clickTargetX = null;
       g.clickTargetY = null;
+      g.name = playerData.name;
       
       mapContainer.addChild(g);
       
@@ -350,6 +351,7 @@ export default function Cosmos({ username, onProximityChange }) {
           proximityRoom = roomName;
           socket.emit("joinRoom", proximityRoom);
           socket.emit("proximity:enter", nearestId);
+          socket.emit("chat:history:request", { withId: nearestId, withName: nearestP.name });
           console.log("Joined proximity room", proximityRoom);
           onProximityChange(true, [nearestId]);
         }

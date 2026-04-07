@@ -13,6 +13,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
   const [username, setUsername] = useState("");
+  const [initialMessages, setInitialMessages] = useState([]);
 
   useEffect(() => {
     if (socket.connected) {
@@ -30,6 +31,11 @@ function App() {
     socket.on("leftRoom", () => {
       setRoom(null);
       setConnectedUsers([]);
+      setInitialMessages([]);
+    });
+
+    socket.on("chat:history:response", (msgs) => {
+      setInitialMessages(msgs);
     });
 
     return () => {
@@ -81,6 +87,7 @@ function App() {
                    room={room} 
                    connectedUsers={connectedUsers} 
                    currentUserId={socket.id}
+                   initialMessages={initialMessages}
                  />
               </div>
             )}
